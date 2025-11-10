@@ -5284,6 +5284,27 @@
     {
         "children": [
             {
+                "children": [],
+                "depends_on": null,
+                "help": "The sample time of the generated sine wave.\nThis value influences the \"graininess\" of the output signal and the maximum frecuency that the controller can generate.\nA value of 100us corresponds to about a maximum frecuency of 1.25kHz, while a value of 500us yields a maximum frecuency of 250Hz",
+                "id": "SINE_WAVE_SAMPLE_TIMEus",
+                "name": "SINE_WAVE_SAMPLE_TIMEus",
+                "range": [
+                    100,
+                    500
+                ],
+                "title": "Sine wave sample time (us)",
+                "type": "int"
+            }
+        ],
+        "depends_on": null,
+        "id": "motor-controller-configuration",
+        "title": "Motor Controller Configuration",
+        "type": "menu"
+    },
+    {
+        "children": [
+            {
                 "children": [
                     {
                         "children": [],

@@ -433,6 +433,12 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
+# Motor Controller Configuration
+#
+CONFIG_SINE_WAVE_SAMPLE_TIMEus=200
+# end of Motor Controller Configuration
+
+#
 # Compiler options
 #
 CONFIG_COMPILER_OPTIMIZATION_DEBUG=y

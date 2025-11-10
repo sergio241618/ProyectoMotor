@@ -1,0 +1,29 @@
+Command: ninja all
+[1/9] Performing build step for 'bootloader'
+[1/1] cd /project/build/bootloader/esp-idf/esptool_py && /opt/esp-idf-tools/python_env/idf5.5_py3.10_env/bin/python /opt/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x1000 /project/build/bootloader/bootloader.bin
+Bootloader binary size 0x6680 bytes. 0x980 bytes (8%) free.
+[2/7] Building CXX object esp-idf/main/CMakeFiles/__idf_main.dir/app_main.cpp.obj
+/project/main/app_main.cpp: In function 'void uart_init()':
+/project/main/app_main.cpp:74:5: warning: missing initializer for member 'uart_config_t::rx_flow_ctrl_thresh' [-Wmissing-field-initializers]
+   74 |     };
+      |     ^
+/project/main/app_main.cpp:74:5: warning: missing initializer for member 'uart_config_t::<anonymous>' [-Wmissing-field-initializers]
+/project/main/app_main.cpp:74:5: warning: missing initializer for member 'uart_config_t::flags' [-Wmissing-field-initializers]
+/project/main/app_main.cpp: At global scope:
+/project/main/app_main.cpp:116:13: warning: 'void rpm_tx_task(void*)' defined but not used [-Wunused-function]
+  116 | static void rpm_tx_task(void *arg)
+      |             ^~~~~~~~~~~
+/project/main/app_main.cpp:98:13: warning: 'void uart_rx_task(void*)' defined but not used [-Wunused-function]
+   98 | static void uart_rx_task(void *arg)
+      |             ^~~~~~~~~~~~
+[3/7] Linking C static library esp-idf/main/libmain.a
+[4/7] Generating esp-idf/esp_system/ld/sections.ld
+[5/7] Linking CXX executable EncoderESP.elf
+[6/7] Generating binary image from built executable
+esptool.py v4.10.dev2
+Creating esp32 image...
+Merged 2 ELF sections
+Successfully created esp32 image.
+Generated /project/build/EncoderESP.bin
+[7/7] cd /project/build/esp-idf/esptool_py && /opt/esp-idf-tools/python_env/idf5.5_py3.10_env/bin/python /opt/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /project/build/partition_table/partition-table.bin /project/build/EncoderESP.bin
+EncoderESP.bin binary size 0x360c0 bytes. Smallest app partition is 0x100000 bytes. 0xc9f40 bytes (79%) free.

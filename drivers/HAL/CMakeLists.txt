@@ -1,4 +1,6 @@
 idf_component_register(
-    SRCS "Simulink2ESP32.c"
+    SRCS "phases.cpp"
     INCLUDE_DIRS "."
+    PRIV_INCLUDE_DIRS "../"
+    REQUIRES esp_timer driver freertos log
 )

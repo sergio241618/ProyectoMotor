@@ -1,3 +1,12 @@
+/**
+ * ARCHIVO: main/app_main.cpp
+ * * Lógica principal que combina:
+ * 1. Controlador de motor AC (drivers/HAL/phases.hpp)
+ * 2. Lector de Encoder (para feedback de RPM)
+ * 3. Comunicación UART (para recibir comandos y enviar telemetría)
+ * * Incluye un interruptor de #define para modo de prueba.
+ */
+
 #include <stdio.h>
 #include <math.h>
 #include "freertos/FreeRTOS.h"
@@ -7,13 +16,20 @@
 #include "driver/ledc.h"
 #include "esp_log.h"
 #include "soc/gpio_struct.h"
+#include "phases.hpp"
 
-#define TAG "MOTOR_UART"
+
+#define TAG "MOTOR_AC_UART"
+
+// --- Interruptor de Pruebas ---
+// Poner en 1 para activar el MODO PRUEBA (frecuencia fija, para LED)
+// Poner en 0 para activar el MODO REAL (control por UART)
+#define RUN_TEST_MODE 0
+
 
 // ================== Pins ==================
-#define PIN_ENC_A      GPIO_NUM_25
-#define PIN_ENC_B      GPIO_NUM_26
-#define PIN_PWM        GPIO_NUM_13
+#define PIN_ENC_A      GPIO_NUM_14 // Encoder en pines libres
+#define PIN_ENC_B      GPIO_NUM_15
 
 // ================== UART ===================
 #define UART_PORT      UART_NUM_0
@@ -31,9 +47,7 @@
 static volatile long g_pulse_count = 0;
 static volatile uint8_t old_AB = 0;
 static const int8_t QEM[16] = {0,-1,1,0,1,0,0,-1,-1,0,0,1,0,1,-1,0};
-static uint8_t  g_pwm_cmd  = 0;
-static uint16_t g_rpm_ref  = 0;     // NEW: stores the reference received from Simulink
-
+static uint16_t g_rpm_ref  = 0;
 static portMUX_TYPE spinlock = portMUX_INITIALIZER_UNLOCKED;
 
 // ================== Encoder ISR ===================
@@ -62,29 +76,6 @@ static void uart_init(void)
     uart_driver_install(UART_PORT, 256, 256, 0, NULL, 0);
 }
 
-// ================== PWM INIT ===================
-static void pwm_init(void)
-{
-    ledc_timer_config_t timer = {
-        .speed_mode       = LEDC_HIGH_SPEED_MODE,
-        .timer_num        = LEDC_TIMER_0,
-        .duty_resolution  = LEDC_TIMER_8_BIT,
-        .freq_hz          = 100000,
-        .clk_cfg          = LEDC_AUTO_CLK
-    };
-    ledc_timer_config(&timer);
-
-    ledc_channel_config_t ch = {
-        .gpio_num   = PIN_PWM,
-        .speed_mode = LEDC_HIGH_SPEED_MODE,
-        .channel    = LEDC_CHANNEL_0,
-        .timer_sel  = LEDC_TIMER_0,
-        .duty       = 0,
-        .hpoint     = 0
-    };
-    ledc_channel_config(&ch);
-}
-
 // ================== Encoder INIT ===================
 static void encoder_init(void)
 {
@@ -96,33 +87,26 @@ static void encoder_init(void)
         .intr_type = GPIO_INTR_ANYEDGE
     };
     gpio_config(&io_conf);
-
     old_AB = ((gpio_get_level(PIN_ENC_A) << 1) | gpio_get_level(PIN_ENC_B));
-
     gpio_install_isr_service(0);
     gpio_isr_handler_add(PIN_ENC_A, encoder_isr, NULL);
     gpio_isr_handler_add(PIN_ENC_B, encoder_isr, NULL);
 }
 
 // ================== UART RX Task ===================
-// Expect exactly 2x uint16 in this order: [rpm_ref, pwm]
+// Espera [rpm_ref, target_frequency_hz]
 static void uart_rx_task(void *arg)
 {
-    uint16_t rx_buf[2];  // rx_buf[0]=rpm_ref, rx_buf[1]=pwm_raw
+    uint16_t rx_buf[2];  // rx_buf[0]=rpm_ref, rx_buf[1]=frecuencia_hz
     while (1) {
         int len = uart_read_bytes(UART_PORT, (uint8_t *)rx_buf,
                                   sizeof(rx_buf), pdMS_TO_TICKS(20));
         if (len == sizeof(rx_buf)) {
-            g_rpm_ref = rx_buf[0];         // first word = rpm_ref
-
-            uint16_t raw_pwm = rx_buf[1];  // second word = pwm (0..65535)
-            double duty = ((double)raw_pwm / 65535.0) * 255.0;
-            if (duty > 255.0) duty = 255.0;
-            if (duty < 0.0)   duty = 0.0;
-            g_pwm_cmd = (uint8_t)duty;
-
-            ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, g_pwm_cmd);
-            ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0);
+            g_rpm_ref = rx_buf[0];
+            uint16_t target_freq_hz = rx_buf[1];
+            
+            // Aplicamos la frecuencia al driver del motor AC
+            phases::set_frequency((float)target_freq_hz);
         }
         vTaskDelay(pdMS_TO_TICKS(5));
     }
@@ -153,18 +137,58 @@ static void rpm_tx_task(void *arg)
 
         uint16_t rpm_val = (uint16_t)rpm_filt;
         uart_write_bytes(UART_PORT, (const char *)&rpm_val, sizeof(uint16_t));
-        uart_write_bytes(UART_PORT, (const char *)&g_rpm_ref, sizeof(uint16_t)); // Just for debugging
+        uart_write_bytes(UART_PORT, (const char *)&g_rpm_ref, sizeof(uint16_t));
+
+        // --- ¡AQUÍ LA PRUEBA DE SOFTWARE! ---
+        // Imprime la frecuencia que el módulo 'phases' cree que está generando
+        ESP_LOGI(TAG, "RPM(tx): %u, Freq(leida): %.2f Hz", rpm_val, phases::get_frequency());
     }
 }
 
 // ================== MAIN ===================
-void app_main(void)
+extern "C" void app_main(void)
 {
     esp_log_level_set("*", ESP_LOG_WARN);
+    esp_log_level_set(TAG, ESP_LOG_INFO);
+    
+    // --- INICIALIZACIÓN COMÚN ---
     uart_init();
-    pwm_init();
     encoder_init();
 
+    ESP_LOGI(TAG, "Inicializando controlador de motor AC (Phases)...");
+    if (phases::init_phases()) {
+        ESP_LOGI(TAG, "Controlador AC inicializado.");
+        
+        phases::set_amplitude(1.0f); // Amplitud al 100%
+        phases::start_phases();      // Arranca los timers de PWM
+        
+    } else {
+        ESP_LOGE(TAG, "¡¡¡ ERROR FATAL al inicializar 'phases' !!!");
+        while(1) { vTaskDelay(1000); } // Detener
+    }
+
+// --- AQUÍ SE SELECCIONA EL MODO DE OPERACIÓN ---
+#if (RUN_TEST_MODE == 1)
+
+    // --- MODO DE PRUEBA ---
+    ESP_LOGW(TAG, "======== MODO DE PRUEBA ACTIVO ========");
+    ESP_LOGW(TAG, "Fijando frecuencia a 1.0 Hz para prueba de LED.");
+    ESP_LOGW(TAG, "Conecta un LED + Resistor al GPIO 5 (A_HIGH)");
+    phases::set_frequency(0.2f);
+    // No se inician las tareas de UART ni RPM, el sistema espera aquí.
+
+#else
+
+    // --- MODO REAL (UART) ---
+    ESP_LOGI(TAG, "======== MODO REAL (UART) ACTIVO ========");
+    ESP_LOGI(TAG, "Iniciando tareas de control por UART y telemetría de RPM.");
+    
+    // Arrancamos con motor detenido hasta recibir comando
+    phases::set_frequency(0.0f); 
+    
+    // Creamos las tareas de control
     xTaskCreatePinnedToCore(uart_rx_task, "uart_rx_task", 2048, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(rpm_tx_task, "rpm_tx_task", 4096, NULL, 5, NULL, 1);
+
+#endif
 }
